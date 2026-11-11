@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>// BLACKOUT</title>
+<style>
+  :root {
+    --bg: #0a0e0a;
+    --ekran: #0d140d;
+    --yesil: #4ade80;
+    --yesil-sonuk: #2c8850;
+    --gri: #5a6b5a;
+    --amber: #f0b429;
+    --kirmizi: #e5484d;
+    --imlec: #4ade80;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    font-family: "Courier New", ui-monospace, monospace;
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px; color: var(--yesil);
+  }
+  /* CRT hafif tarama çizgisi hissi — atmosfer bedava */
+  .ekran {
+    width: 100%; max-width: 720px; height: 82vh;
+    background: var(--ekran);
+    border: 1px solid #1c2a1c;
+    border-radius: 8px;
+    box-shadow: 0 0 40px rgba(74,222,128,0.08), inset 0 0 60px rgba(0,0,0,0.6);
+    display: flex; flex-direction: column;
+    overflow: hidden; position: relative;
+  }
+  .ekran::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,0.14) 0, rgba(0,0,0,0.14) 1px, transparent 1px, transparent 3px);
+    opacity: 0.5;
+  }
+
+  /* üst bar: hedef + tespit sayacı */
+  .bar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px; border-bottom: 1px solid #1c2a1c;
+    font-size: 13px; color: var(--yesil-sonuk); flex-shrink: 0;
+    background: rgba(0,0,0,0.3);
+  }
+  .bar .hedef { letter-spacing: 1px; }
+  .bar .sayac { color: var(--amber); font-weight: bold; letter-spacing: 1px; }
+  .bar .sayac.tehlike { color: var(--kirmizi); animation: yanip 0.6s infinite; }
+  @keyframes yanip { 50% { opacity: 0.35; } }
+
+  /* çıktı alanı */
+  .cikti {
+    flex: 1; overflow-y: auto; padding: 14px;
+    font-size: 14px; line-height: 1.5; white-space: pre-wrap;
+    z-index: 1;
+  }
+  .cikti::-webkit-scrollbar { width: 8px; }
+  .cikti::-webkit-scrollbar-thumb { background: #1c2a1c; border-radius: 4px; }
+
+  .satir { margin-bottom: 2px; }
+  .komut-yaziMi { color: #cfe8cf; }
+  .sistem { color: var(--yesil); }
+  .sonuk { color: var(--gri); }
+  .uyari { color: var(--amber); }
+  .hata { color: var(--kirmizi); }
+  .basari { color: #86efac; font-weight: bold; }
+
+  /* giriş satırı */
+  .giris-satir {
+    display: flex; align-items: center; padding: 10px 14px;
+    border-top: 1px solid #1c2a1c; z-index: 1; flex-shrink: 0;
+    background: rgba(0,0,0,0.3);
+  }
+  .prompt { color: var(--yesil); margin-right: 8px; white-space: nowrap; font-size: 14px; }
+  #giris {
+    flex: 1; background: transparent; border: none; outline: none;
+    color: #cfe8cf; font-family: inherit; font-size: 14px; caret-color: var(--imlec);
+  }
+  #giris:disabled { opacity: 0.4; }
+
+  /* bitiş kaplaması */
+  .kaplama {
+    position: absolute; inset: 0; z-index: 3;
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(5,8,5,0.94); text-align: center; padding: 20px;
+  }
+  .kaplama.goster { display: flex; }
+  .kaplama h1 { font-size: 26px; letter-spacing: 3px; margin-bottom: 12px; }
+  .kaplama.kazandi h1 { color: #86efac; }
+  .kaplama.kaybetti h1 { color: var(--kirmizi); }
+  .kaplama p { color: var(--gri); margin-bottom: 20px; font-size: 14px; }
+  .kaplama button {
+    background: transparent; color: var(--yesil); border: 1px solid var(--yesil-sonuk);
+    padding: 10px 22px; font-family: inherit; font-size: 14px; cursor: pointer;
+    letter-spacing: 1px; border-radius: 4px;
+  }
+  .kaplama button:hover { background: rgba(74,222,128,0.1); }
+
+  /* --- İSTİHBARAT KUTUSU (sarı, katlanabilir) --- */
+  .istihbarat {
+    position: absolute; top: 46px; right: 12px; z-index: 2;
+    width: 210px; font-family: "Courier New", monospace;
+    background: rgba(240,180,41,0.10);
+    border: 1px solid var(--amber);
+    border-radius: 4px;
+    font-size: 11px; overflow: hidden;
+    display: none;   /* sadece istihbaratı olan level'larda gösterilir */
+  }
+  .istihbarat.var { display: block; }
+  .istihbarat .baslik {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 9px; cursor: pointer; color: var(--amber);
+    letter-spacing: 1px; user-select: none;
+  }
+  .istihbarat .baslik:hover { background: rgba(240,180,41,0.08); }
+  .istihbarat .ok { transition: transform 0.2s; font-size: 9px; }
+  .istihbarat.acik .ok { transform: rotate(90deg); }
+  .istihbarat .icerik {
+    display: none; padding: 0 9px 9px; color: #d9a441; line-height: 1.5;
+    border-top: 1px solid rgba(240,180,41,0.25);
+  }
+  .istihbarat.acik .icerik { display: block; padding-top: 7px; }
+  /* --- SAVUNMA FAZI: ekran kırmızıya döner --- */
+  .ekran.alarm {
+    border-color: var(--kirmizi);
+    box-shadow: 0 0 50px rgba(229,72,77,0.25), inset 0 0 80px rgba(229,72,77,0.15);
+    animation: alarmNabiz 1.4s infinite;
+  }
+  @keyframes alarmNabiz {
+    0%,100% { box-shadow: 0 0 40px rgba(229,72,77,0.18), inset 0 0 70px rgba(229,72,77,0.10); }
+    50% { box-shadow: 0 0 60px rgba(229,72,77,0.35), inset 0 0 90px rgba(229,72,77,0.22); }
+  }
+  .ekran.alarm .bar { border-bottom-color: var(--kirmizi); }
+  .ekran.alarm .giris-satir { border-top-color: var(--kirmizi); }
+  .ekran.alarm .prompt { color: var(--kirmizi); }
+
+  /* --- HACKLENME ANI: sallanma + flaş --- */
+  .ekran.sarsil { animation: sarsinti 0.5s linear; }
+  @keyframes sarsinti {
+    0%,100% { transform: translate(0,0); }
+    10% { transform: translate(-7px,5px); }  20% { transform: translate(6px,-6px); }
+    30% { transform: translate(-8px,-4px); } 40% { transform: translate(7px,6px); }
+    50% { transform: translate(-6px,4px); }  60% { transform: translate(8px,-5px); }
+    70% { transform: translate(-5px,-6px); } 80% { transform: translate(6px,5px); }
+    90% { transform: translate(-4px,3px); }
+  }
+  .kirmizi-flas {
+    position: absolute; inset: 0; z-index: 5; pointer-events: none;
+    background: var(--kirmizi); opacity: 0;
+  }
+  .kirmizi-flas.cak { animation: flasCak 0.6s ease-out; }
+  @keyframes flasCak { 0% { opacity: 0.6; } 100% { opacity: 0; } }
+
+  /* --- GİRİŞ EKRANI --- */
+  .giris-ekrani {
+    position: absolute; inset: 0; z-index: 10;
+    background: var(--ekran);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 30px; text-align: center; overflow-y: auto;
+  }
+  .giris-ekrani.gizli { display: none; }
+  .ge-ust { color: var(--yesil-sonuk); font-size: 12px; letter-spacing: 3px; margin-bottom: 8px; }
+  .ge-baslik {
+    color: var(--yesil); font-size: 34px; letter-spacing: 8px; margin-bottom: 6px;
+    text-shadow: 0 0 20px rgba(74,222,128,0.4);
+  }
+  .ge-alt { color: var(--yesil-sonuk); font-size: 12px; letter-spacing: 2px; margin-bottom: 26px; }
+  .ge-kutu {
+    max-width: 400px; width: 100%; margin: 0 auto 20px; text-align: left;
+    border: 1px solid var(--hat); border-radius: 6px; padding: 14px; background: rgba(0,0,0,0.25);
+  }
+  .ge-kutu .etiket { color: var(--amber); font-size: 11px; letter-spacing: 1px; margin-bottom: 8px; }
+  .ge-kutu .metin { color: #7d8c7d; font-size: 12px; line-height: 1.7; }
+  .ge-kutu .metin b { color: var(--yesil); font-weight: normal; }
+  .ge-ses-satir { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .ge-ses-satir:last-child { margin-bottom: 0; }
+  .ge-ses-satir label { color: #7d8c7d; font-size: 12px; width: 120px; flex-shrink: 0; }
+  .ge-ses-satir input[type=range] { flex: 1; accent-color: var(--yesil); }
+  .ge-toggle {
+    background: rgba(74,222,128,0.15); color: var(--yesil); border: 1px solid var(--yesil-sonuk);
+    border-radius: 4px; padding: 5px 14px; font-family: inherit; font-size: 12px; cursor: pointer;
+  }
+  .ge-toggle.kapali { background: rgba(229,72,77,0.12); color: var(--kirmizi); border-color: var(--kirmizi); }
+  .ge-baslat {
+    background: transparent; color: var(--yesil); border: 1px solid var(--yesil);
+    border-radius: 6px; padding: 13px 50px; font-family: inherit; font-size: 15px;
+    letter-spacing: 2px; cursor: pointer; text-shadow: 0 0 10px rgba(74,222,128,0.4); margin-top: 6px;
+  }
+  .ge-baslat:hover { background: rgba(74,222,128,0.1); }
+  /* imza: sadece giriş ekranında ve bitiş ekranında görünür, oynarken YOK */
+  .imza-giris {
+    margin-top: 22px; color: var(--yesil); font-size: 14px; letter-spacing: 1px;
+    opacity: 0.85; text-shadow: 0 0 8px rgba(74,222,128,0.35);
+  }
+  .imza-bitis {
+    margin-top: 20px; color: var(--yesil); font-size: 13px; letter-spacing: 1px;
+    opacity: 0.75; text-shadow: 0 0 6px rgba(74,222,128,0.3);
+  }
+</style>
+</head>
+<body>
+<div class="ekran">
+  <div class="kirmizi-flas" id="kirmizi-flas"></div>
+
+  <div class="giris-ekrani" id="giris-ekrani">
+    <div class="ge-ust">// SYSTEM ACCESS TERMINAL</div>
+    <div class="ge-baslik">BLACKOUT</div>
+    <div class="ge-alt">a terminal infiltration game</div>
+
+    <div class="ge-kutu">
+      <div class="etiket">◆ MISSION BRIEFING</div>
+      <div class="metin">
+        You'll breach five systems. On each, the clock is ticking — grab the data, wipe your trace, and get out before you're detected. Don't know the commands? Type <b>help</b>. On the final system, things change.
+      </div>
+    </div>
+
+    <div class="ge-kutu">
+      <div class="etiket">SOUND</div>
+      <div class="ge-ses-satir">
+        <label>keyboard volume</label>
+        <input type="range" min="0" max="100" value="70" id="ge-klavye-ses" />
+      </div>
+      <div class="ge-ses-satir">
+        <label>all sound</label>
+        <button class="ge-toggle" id="ge-ses-toggle">on ▸</button>
+      </div>
+    </div>
+
+    <button class="ge-baslat" id="ge-baslat">▶ CONNECT</button>
+    <div class="imza-giris">byKinac</div>
+  </div>
+
+  <div class="bar">
+    <span class="hedef" id="hedef">TARGET: —</span>
+    <span class="sayac" id="sayac">DETECTION: --s</span>
+  </div>
+
+  <div class="istihbarat" id="istihbarat">
+    <div class="baslik" id="istihbarat-baslik">
+      <span>◆ INTEL</span><span class="ok">▶</span>
+    </div>
+    <div class="icerik" id="istihbarat-icerik"></div>
+  </div>
+
+  <div class="cikti" id="cikti"></div>
+  <div class="giris-satir">
+    <span class="prompt" id="prompt">$</span>
+    <input id="giris" autocomplete="off" spellcheck="false" />
+  </div>
+
+  <div class="kaplama" id="kaplama">
+    <h1 id="kaplama-baslik"></h1>
+    <p id="kaplama-mesaj"></p>
+    <button id="kaplama-buton"></button>
+    <div class="imza-bitis">byKinac</div>
+  </div>
+</div>
+
+<script>
+/* =======================================================================
+   GECE YARISI PROTOKOLÜ — terminal hacking prototipi
+   Mimari fikir: arkada GERÇEK işletim sistemi YOK.
+   Her level, elle kurulmuş küçük bir "sahte dosya sistemi" (nesne) + komut
+   kurallarından ibaret. Komut gelince, o sahte dünyada karşılığını basarız.
+   ======================================================================= */
+
+/* ---- LEVEL VERİSİ ----
+   Her level: hedef adı, süre, kök dizin (klasör/dosya ağacı), görev (okunacak dosya),
+   ve giriş mesajı. Yeni level eklemek = buraya yeni bir nesne yazmak. Kod değişmez. */
+const LEVELLER = [
+  {
+    hedef: "nexus-fileserver-01",
+    sure: 60,
+    girisMetni: [
+      { t:"sistem", s:"> CONNECTION ESTABLISHED: nexus-fileserver-01" },
+      { t:"uyari",  s:"> This session is monitored. Grab the data and leave unnoticed." },
+      { t:"sonuk",  s:"> Commands: help, ls, cd, cat, whoami, exit" },
+      { t:"sonuk",  s:"> Hint: start with 'ls' to look around." },
+    ],
+    fs: {
+      "readme.txt": "This server is for authorized personnel only.",
+      "documents": {
+        "notes.txt": "Meeting at 15:00. Out of coffee.",
+        "secret.txt": "ACCESS KEY: 7F-ALPHA-3391"
+      }
+    },
+    gorevDosyasi: "documents/secret.txt",
+    kullanici: "guest"
+  },
+  {
+    hedef: "atlas-mainframe",
+    sure: 45,
+    girisMetni: [
+      { t:"sistem", s:"> CONNECTION ESTABLISHED: atlas-mainframe" },
+      { t:"uyari",  s:"> Security level raised. Less time on the clock." },
+      { t:"sonuk",  s:"> Commands: help, ls, cd, cat, whoami, rm, exit" },
+    ],
+    fs: {
+      "system": {
+        "log.txt": "Last login: root @ 03:14",
+        "lock.dat": "// corrupted data //"
+      },
+      "vault": {
+        "no_read_access.txt": "cat: permission denied",
+        "target.dat": "TRANSFER CODE: QX-9920-ZETA"
+      },
+      "trash": {
+        "old.txt": "deleted"
+      }
+    },
+    gorevDosyasi: "vault/target.dat",
+    kullanici: "guest",
+    tuzakSilme: "system/lock.dat"
+  },
+  {
+    hedef: "helios-archive-server",
+    sure: 50,
+    grepAcik: true,
+    istihbarat: "The target record is tagged with code HL-4420, in the 'archive' folder. Don't open records one by one — use grep to search contents.",
+    girisMetni: [
+      { t:"sistem", s:"> CONNECTION ESTABLISHED: helios-archive-server" },
+      { t:"uyari",  s:"> Hundreds of records here. No time to open them all." },
+      { t:"sonuk",  s:"> Use the right tool and the record you want pops right out." },
+      { t:"sonuk",  s:"> Commands: help, ls, cd, cat, grep, whoami, exit" },
+    ],
+    fs: {
+      "archive": {
+        "record_001.log": "Routine backup completed.",
+        "record_002.log": "Server rebooted.",
+        "record_003.log": "Disk usage 72%.",
+        "record_004.log": "User logged in: blue.",
+        "record_005.log": "[HL-4420] AUTH KEY: OMEGA-7731",
+        "record_006.log": "Network connection stable.",
+        "record_007.log": "Temperature normal.",
+        "record_008.log": "Backup scheduled 04:00.",
+        "record_009.log": "Memory cleared.",
+        "record_010.log": "Session closed: blue."
+      },
+      "temp": {
+        "note.txt": "Nobody remembers the password."
+      }
+    },
+    gorevDosyasi: "archive/record_005.log",
+    kullanici: "shadow"
+  },
+  {
+    hedef: "orion-security-node",
+    sure: 45,
+    grepAcik: true,
+    istihbarat: "Your traces are in the 'logs' folder, stamped with code SHADOW. Find and delete them. Careful: there's a trap in the 'system' folder, don't touch it.",
+    girisMetni: [
+      { t:"sistem", s:"> CONNECTION ESTABLISHED: orion-security-node" },
+      { t:"hata",   s:"> WARNING: Your moves are being written to the 'logs' folder." },
+      { t:"uyari",  s:"> You left traces behind. Wipe them all before time runs out." },
+      { t:"sonuk",  s:"> The INTEL box in the top right explains how." },
+      { t:"sonuk",  s:"> Commands: help, ls, cd, grep, rm, whoami, exit" },
+      { t:"sonuk",  s:"> ('cat' is disabled on this node.)" },
+    ],
+    fs: {
+      "logs": {
+        "access_01.log": "08:14 connection — signature: SHADOW",
+        "access_02.log": "08:14 routine scan complete",
+        "access_03.log": "08:15 auth attempt — signature: SHADOW",
+        "access_04.log": "08:15 temperature normal",
+        "access_05.log": "08:16 data read — signature: SHADOW"
+      },
+      "system": {
+        "kernel.sys": "// critical system file — DO NOT DELETE"
+      }
+    },
+    izDosyalari: [
+      "logs/access_01.log",
+      "logs/access_03.log",
+      "logs/access_05.log"
+    ],
+    tuzakSilme: "system/kernel.sys",
+    exitUyari: "Your traces are still there. You can't leave until they're all gone.",
+    kullanici: "shadow",
+    catKapali: true
+  },
+  {
+    hedef: "core-server // FINAL TARGET",
+    sure: 60,
+    sortAcik: true,
+    catKapali: true,
+    istihbarat: "The master password appears exactly once in 'log.log', the rest is repeated noise. You need to strip the duplicates and find the unique line. Then the system will wake up — be ready.",
+    girisMetni: [
+      { t:"sistem", s:"> CONNECTION ESTABLISHED: core-server" },
+      { t:"uyari",  s:"> Final target. The master password is hidden in the log — among thousands of repeats." },
+      { t:"sonuk",  s:"> Use 'sort' and 'uniq' to process the log, find the one unique line." },
+      { t:"sonuk",  s:"> Commands: help, ls, cd, sort, uniq, whoami, exit" },
+    ],
+    fs: {
+      "log.log":
+        "connection established\n" +
+        "scan routine\n" +
+        "connection established\n" +
+        "temperature normal\n" +
+        "scan routine\n" +
+        "connection established\n" +
+        "MASTER-PASSWORD: KRAKEN-9080\n" +
+        "temperature normal\n" +
+        "scan routine\n" +
+        "connection established\n" +
+        "temperature normal\n" +
+        "scan routine",
+      "core.key": "main system key",
+      "identity.dat": "operator identity",
+      "vault.enc": "encrypted asset vault"
+    },
+    sizmaSifresi: "KRAKEN-9080",
+    savunmaSure: 22,
+    korunacak: ["core.key", "identity.dat", "vault.enc"],
+    exitUyari: "You're not safe yet.",
+    kullanici: "shadow"
+  }
+];
+
+/* ---- DURUM ---- */
+let levelIndex = 0;
+let cwd = [];          // şu anki dizin yolu, örn. ["belgeler"]
+let kalanSure = 0;
+let sayacRef = null;
+let oyunAktif = false;
+
+const $ = (id) => document.getElementById(id);
+const cikti = $('cikti');
+const giris = $('giris');
+
+/* ===================== SES MOTORU =====================
+   Tüm sesler kodda üretilir (Web Audio API) — hiç ses dosyası yok, tek HTML.
+   Seçimler: tuş=creamy, kilit=1, sayaç=2, hack=kombo, kazan=2, kaybet=2. */
+let _sesCtx = null;
+let _sesAcik = true;          // tüm sesler açık mı
+let _klavyeSes = 0.7;         // klavye sesi seviyesi (0-1)
+function _ac() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!_sesCtx) _sesCtx = new AC();
+  if (_sesCtx.state === 'suspended') _sesCtx.resume();
+  return _sesCtx;
+}
+const _R = (a, b) => a + Math.random() * (b - a);
+
+function _ton(freq, dur, type, vol, glide, delay) {
+  const c = _ac(), t = c.currentTime + (delay || 0);
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = type || 'square'; o.frequency.setValueAtTime(freq, t);
+  if (glide) o.frequency.exponentialRampToValueAtTime(glide, t + dur);
+  g.gain.setValueAtTime(vol || 0.15, t);
+  g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+  o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + dur);
+}
+function _noise(dur, vol, delay, filtType, filtFreq) {
+  const c = _ac(), t = c.currentTime + (delay || 0);
+  const n = Math.max(1, Math.floor(c.sampleRate * dur));
+  const buf = c.createBuffer(1, n, c.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+  const src = c.createBufferSource(); src.buffer = buf;
+  const g = c.createGain();
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+  if (filtType) { const f = c.createBiquadFilter(); f.type = filtType; f.frequency.value = filtFreq || 1000; src.connect(f); f.connect(g); }
+  else src.connect(g);
+  g.connect(c.destination); src.start(t);
+}
+
+const SES = {
+  // tuş: creamy — yumuşak transient + derin akışkan gövde, her tuş hafif farklı
+  tus() {
+    if (!_sesAcik || _klavyeSes <= 0) return;
+    try {
+      const v = _klavyeSes;
+      _noise(0.004, _R(0.05, 0.08) * v, 0, 'lowpass', 2000);
+      _ton(_R(120, 140), 0.10, 'sine', 0.30 * v, _R(120, 140) * 0.55);
+      _ton(_R(68, 80), 0.07, 'sine', 0.15 * v, _R(68, 80) * 0.6);
+    } catch (e) {}
+  },
+  // kilit-1: parlak "ding" üç kademe
+  kilit() {
+    if (!_sesAcik) return;
+    try {
+      _ton(500, 0.04, 'sine', 0.14);
+      _ton(1000, 0.05, 'sine', 0.12, null, 0.04);
+      _ton(1500, 0.08, 'sine', 0.10, null, 0.09);
+    } catch (e) {}
+  },
+  // sayaç-2: çift katmanlı tik
+  tik() {
+    if (!_sesAcik) return;
+    try { _ton(800, 0.04, 'triangle', 0.13); _ton(1200, 0.03, 'square', 0.08, null, 0.05); } catch (e) {}
+  },
+  // hack kombo: önce alarm2 (nöö-nöö), sonra alarm1 (glitch+siren)
+  hack() {
+    if (!_sesAcik) return;
+    try {
+      for (let i = 0; i < 3; i++) { _ton(900, 0.14, 'square', 0.14, null, i * 0.2); _ton(600, 0.14, 'square', 0.14, null, i * 0.2 + 0.1); }
+      setTimeout(() => {
+        if (!_sesAcik) return;
+        _noise(0.6, 0.14);
+        let t = 0; const iv = setInterval(() => { _ton(220 + Math.random() * 400, 0.08, 'sawtooth', 0.13); t++; if (t > 7) clearInterval(iv); }, 90);
+        _ton(880, 0.5, 'sawtooth', 0.16, 200, 0.2);
+      }, 650);
+    } catch (e) {}
+  },
+  // kazan-2: dört nota yükselen (triangle)
+  kazan() {
+    if (!_sesAcik) return;
+    try { [440, 554, 659, 880].forEach((f, i) => _ton(f, 0.18, 'triangle', 0.14, null, i * 0.11)); } catch (e) {}
+  },
+  // kaybet-2: yavaş hüzünlü iniş
+  kaybet() {
+    if (!_sesAcik) return;
+    try { [330, 262, 196, 131].forEach((f, i) => _ton(f, 0.28, 'triangle', 0.15, null, i * 0.16)); } catch (e) {}
+  }
+};
+
+/* ---- KOMUT AÇIKLAMALARI ----
+   'help komut' ya da 'komut --help' yazınca gösterilir.
+   Yeni komut eklersen buraya da bir satır ekle. */
+const KOMUT_YARDIM = {
+  "ls":     "ls — lists files and folders in the current directory.",
+  "cd":     "cd [folder] — enters a folder.  cd .. goes up a level.  cd ~ returns to root.",
+  "cat":    "cat [file] — reads the contents of a file.",
+  "grep":   "grep [word] — searches INSIDE files in the current directory for a word.",
+  "rm":     "rm [file] — deletes a file. Careful: the wrong file can trigger an alarm.",
+  "sort":   "sort [file] — sorts a file's lines. Duplicates line up together.",
+  "uniq":   "uniq [file] — collapses repeated lines. The unique one stands out.",
+  "lock":   "lock [file] — encrypts and locks a file. The enemy can't reach it anymore.",
+  "whoami": "whoami — tells you which user you currently are.",
+  "exit":   "exit — disconnects from the system. Only safe once the task is done.",
+  "help":   "help — lists commands.  help [command] — explains what that command does."
+};
+
+/* short summary shown next to each command in the help list */
+const KOMUT_OZET = {
+  "ls":     "list files",
+  "cd":     "change folder  (cd .. = up)",
+  "cat":    "read a file",
+  "grep":   "search inside files",
+  "rm":     "delete a file  (be careful)",
+  "sort":   "sort the lines",
+  "uniq":   "strip duplicates, find the unique",
+  "lock":   "lock a file  (defense)",
+  "whoami": "who you are",
+  "exit":   "disconnect",
+  "help":   "help  (help [command] = detail)"
+};
+
+/* ---- yardımcı: çıktı satırı bas ---- */
+function yaz(metin, tip="sistem") {
+  const div = document.createElement('div');
+  div.className = 'satir ' + tip;
+  div.textContent = metin;
+  cikti.appendChild(div);
+  cikti.scrollTop = cikti.scrollHeight;
+}
+function yazKomut(k) {
+  const div = document.createElement('div');
+  div.className = 'satir';
+  div.innerHTML = '<span class="sonuk">'+promptMetni()+'</span> <span class="komut-yaziMi">'+k+'</span>';
+  cikti.appendChild(div);
+  cikti.scrollTop = cikti.scrollHeight;
+}
+
+/* HTML/SVG içeriği basar (kurukafa gibi görseller için). textContent değil innerHTML. */
+function yazHTML(html) {
+  const div = document.createElement('div');
+  div.className = 'satir';
+  div.innerHTML = html;
+  cikti.appendChild(div);
+  cikti.scrollTop = cikti.scrollHeight;
+}
+
+/* Üç kurukafa (düzen B: orta büyük, kenarlar küçük — dolu, köşeli). */
+function kurukafaHTML() {
+  const kk = (boy) => '<svg width="'+boy+'" height="'+(boy*1.08)+'" viewBox="0 0 130 140" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;">'
+    + '<polygon points="65,14 30,30 22,60 32,86 44,92 44,110 54,110 54,98 62,98 62,110 68,110 68,98 76,98 76,110 86,110 86,92 98,86 108,60 100,30" fill="#e5484d"/>'
+    + '<polygon points="38,52 54,50 52,66 40,66" fill="#0d140d"/>'
+    + '<polygon points="92,52 76,50 78,66 90,66" fill="#0d140d"/>'
+    + '<polygon points="65,68 58,82 72,82" fill="#0d140d"/></svg>';
+  return '<div style="display:flex; gap:16px; justify-content:center; align-items:center; margin:8px 0;">'
+    + kk(58) + kk(84) + kk(58) + '</div>';
+}
+
+/* ---- sahte fs içinde gezinme yardımcıları ----
+   aktifFs: level yüklenince orijinal fs'nin TAZE kopyası. rm ile silme bunu
+   değiştirir; orijinal bozulmaz, böylece "try again"de dosyalar geri gelir. */
+let aktifFs = {};
+function suAnkiKlasor() {
+  let node = aktifFs;
+  for (const parca of cwd) node = node[parca];
+  return node;
+}
+function promptMetni() {
+  const yol = cwd.length ? '/' + cwd.join('/') : '~';
+  return LEVELLER[levelIndex].kullanici + '@hedef:' + yol + '$';
+}
+function promptGuncelle() { $('prompt').textContent = promptMetni(); }
+
+/* Part 1 kontrolü: sort/uniq ile işlenen dosya, hedef şifre dosyasıysa
+   ve şifreyi içeriyorsa → Part 1 tamamlanır, savunma fazı tetiklenir. */
+function _gizliKontrol(lv, icerik) {
+  if (!lv.sizmaSifresi) return;
+  if (icerik.includes(lv.sizmaSifresi)) {
+    if (!window._part1Tamam) {
+      window._part1Tamam = true;
+      yaz("", "sonuk");
+      yaz(">> PASSWORD CRACKED: " + lv.sizmaSifresi, "basari");
+      setTimeout(() => savunmayaGec(lv), 900);
+    }
+  }
+}
+
+/* TETİK: ekran kırmızıya döner, savunma fazı başlar, yeni sayaç kurulur. */
+/* rastgele glitch metni üretir (error yağmuru için) */
+function _glitchSatir(uzunluk) {
+  const k = '▓▒░█01101ERR▚▞◤◢⌁¦';
+  let s = '';
+  for (let i = 0; i < uzunluk; i++) s += k[Math.floor(Math.random() * k.length)];
+  return s;
+}
+
+function savunmayaGec(lv) {
+  const ekran = document.querySelector('.ekran');
+  SES.hack();   // alarm kombosu — görsel efektle senkron
+
+  // 1) SARSINTI + KIRMIZI FLAŞ
+  ekran.classList.remove('sarsil'); void ekran.offsetWidth; ekran.classList.add('sarsil');
+  const flas = $('kirmizi-flas');
+  flas.classList.remove('cak'); void flas.offsetWidth; flas.classList.add('cak');
+
+  // 2) ERROR / GLITCH YAĞMURU
+  let g = 0;
+  const gv = setInterval(() => {
+    yaz(_glitchSatir(28 + Math.floor(Math.random() * 8)), "hata");
+    g++;
+    if (g > 4) clearInterval(gv);
+  }, 90);
+  setTimeout(() => yaz("ERROR: unauthorized access detected", "hata"), 180);
+  setTimeout(() => yaz("ERROR: firewall breached", "hata"), 300);
+  setTimeout(() => yaz("WARNING: counter-system active", "uyari"), 420);
+
+  // 3) KURUKAFALAR + ALARM oturuyor
+  setTimeout(() => {
+    ekran.classList.add('alarm');
+    yazHTML(kurukafaHTML());
+    yaz("████████████████████████████████████", "hata");
+    yaz(">> ACCESS DETECTED.", "hata");
+    yaz(">> COUNTER-SYSTEM ENGAGED. Your connection is being seized.", "hata");
+    yaz(">> LOCK the 3 critical files before the enemy reaches them.", "uyari");
+    yaz(">> (1) ls — see the files  (2) lock [file] — lock all three  (3) exit", "uyari");
+    yaz("████████████████████████████████████", "hata");
+  }, 650);
+
+  // savunma modunu aç, sayacı yeni süreyle yeniden başlat
+  lv.savunma = true;
+  window._gorevTamam = false;
+  window._kilitlenenler = [];
+  kalanSure = lv.savunmaSure || 20;
+  $('hedef').textContent = "DEFENSE: enemy closing in";
+  sayacGuncelle();
+}
+
+/* ---- KOMUT İŞLEME ---- */
+function komutIsle(ham) {
+  const girdi = ham.trim();
+  if (!girdi) return;
+  yazKomut(girdi);
+
+  const parcalar = girdi.split(/\s+/);
+  const komut = parcalar[0];
+  const arg = parcalar.slice(1).join(' ');
+  const lv = LEVELLER[levelIndex];
+  const klasor = suAnkiKlasor();
+
+  // 'komut --help' -> o komutun açıklaması (help cd ile aynı sonucu verir)
+  if (arg === '--help' && KOMUT_YARDIM[komut]) {
+    yaz(KOMUT_YARDIM[komut], "sistem");
+    return;
+  }
+
+  switch (komut) {
+    case 'help': {
+      // 'help cd' ya da 'help --cd' -> o komutun açıklaması
+      if (arg) {
+        const hedefKomut = arg.replace(/^--/, '').trim().toLowerCase();
+        if (KOMUT_YARDIM[hedefKomut]) {
+          yaz(KOMUT_YARDIM[hedefKomut], "sistem");
+        } else {
+          yaz("help: no such command '" + arg + "'. Just type 'help' to see the list.", "hata");
+        }
+        break;
+      }
+      // argümansız 'help' -> her komut + kısa açıklaması (hizalı liste)
+      let kmt = ["ls", "cd"];
+      if (!lv.catKapali) kmt.push("cat");
+      if (lv.grepAcik) kmt.push("grep");
+      if (lv.sortAcik) kmt.push("sort", "uniq");
+      if (lv.tuzakSilme || lv.izDosyalari) kmt.push("rm");
+      if (lv.savunma) kmt.push("lock");
+      kmt.push("whoami", "help", "exit");
+      yaz("available commands:", "sonuk");
+      kmt.forEach(k => {
+        const isim = k.padEnd(7, " ");          // hizalama için
+        yaz("  " + isim + KOMUT_OZET[k], "sistem");
+      });
+      yaz("for more detail: help [command]   e.g. help cd", "sonuk");
+      break;
+    }
+
+    case 'ls': {
+      const isimler = Object.keys(klasor);
+      if (!isimler.length) { yaz("(empty)", "sonuk"); break; }
+      isimler.forEach(ad => {
+        const klasorMu = typeof klasor[ad] === 'object';
+        yaz((klasorMu ? "📁 " : "📄 ") + ad, klasorMu ? "sistem" : "sonuk");
+      });
+      break;
+    }
+
+    case 'cd': {
+      if (!arg || arg === '~') { cwd = []; promptGuncelle(); break; }
+      if (arg === '..') { if (cwd.length) cwd.pop(); promptGuncelle(); break; }
+      if (klasor[arg] && typeof klasor[arg] === 'object') {
+        cwd.push(arg); promptGuncelle();
+      } else if (klasor[arg]) {
+        yaz("cd: " + arg + ": not a folder", "hata");
+      } else {
+        yaz("cd: " + arg + ": no such directory", "hata");
+      }
+      break;
+    }
+
+    case 'cat': {
+      if (lv.catKapali) { yaz("cat: disabled on this node", "hata"); break; }
+      if (!arg) { yaz("cat: specify a file", "hata"); break; }
+      if (klasor[arg] && typeof klasor[arg] === 'string') {
+        yaz(klasor[arg], "sistem");
+        // görev dosyası mı? tam yolu kur
+        const tamYol = (cwd.length ? cwd.join('/') + '/' : '') + arg;
+        if (tamYol === lv.gorevDosyasi) {
+          yaz("", "sonuk");
+          yaz(">> TARGET DATA ACQUIRED. Now type 'exit' to leave clean.", "basari");
+          window._gorevTamam = true;
+        }
+      } else if (klasor[arg]) {
+        yaz("cat: " + arg + ": is a folder", "hata");
+      } else {
+        yaz("cat: " + arg + ": file not found  (try 'ls' first)", "hata");
+      }
+      break;
+    }
+
+    case 'whoami':
+      yaz(lv.kullanici, "sonuk");
+      break;
+
+    case 'grep': {
+      if (!arg) { yaz("grep: type a word to search. e.g. grep password", "hata"); break; }
+      // o anki klasördeki TÜM dosyaların içinde ara (klasörler hariç)
+      const aranan = arg.toLowerCase();
+      let bulundu = 0;
+      Object.keys(klasor).forEach(ad => {
+        if (typeof klasor[ad] === 'string') {           // sadece dosyalar
+          const icerik = klasor[ad];
+          if (icerik.toLowerCase().includes(aranan)) {
+            // eşleşen satırı göster (dosya adı: satır)
+            const satirlar = icerik.split('\n');
+            satirlar.forEach(sat => {
+              if (sat.toLowerCase().includes(aranan)) {
+                yaz(ad + ": " + sat, "uyari");
+                bulundu++;
+              }
+            });
+          }
+        }
+      });
+      if (!bulundu) yaz("grep: '" + arg + "' not found in any file in this directory", "sonuk");
+      break;
+    }
+
+    case 'sort': {
+      if (!lv.sortAcik) { yaz("sort: command blocked on this system", "hata"); break; }
+      if (!arg) { yaz("sort: specify a file. e.g. sort data.log", "hata"); break; }
+      if (!(klasor[arg] && typeof klasor[arg] === 'string')) {
+        yaz("sort: " + arg + ": file not found", "hata"); break;
+      }
+      const satirlar = klasor[arg].split('\n').sort();
+      yaz("── sort: " + arg + " ──", "sonuk");
+      satirlar.forEach(s => yaz(s, "sistem"));
+      // görev: sıralanınca şifre satırı ortaya çıkar (kontrol cat/gorevKelime ile)
+      _gizliKontrol(lv, klasor[arg]);
+      break;
+    }
+
+    case 'uniq': {
+      if (!lv.sortAcik) { yaz("uniq: command blocked on this system", "hata"); break; }
+      if (!arg) { yaz("uniq: specify a file. e.g. uniq data.log", "hata"); break; }
+      if (!(klasor[arg] && typeof klasor[arg] === 'string')) {
+        yaz("uniq: " + arg + ": file not found", "hata"); break;
+      }
+      // tekrar eden satırları teke indir: sadece bir kez geçen satırlar "benzersiz"
+      const hepsi = klasor[arg].split('\n');
+      const sayim = {};
+      hepsi.forEach(s => sayim[s] = (sayim[s] || 0) + 1);
+      const benzersiz = hepsi.filter((s, i) => hepsi.indexOf(s) === i); // sırayı koru, tekrarı at
+      yaz("── uniq: " + arg + " (duplicates removed) ──", "sonuk");
+      benzersiz.forEach(s => {
+        const tekMi = sayim[s] === 1;
+        yaz(s, tekMi ? "uyari" : "sistem");   // yalnızca bir kez geçenler vurgulu
+      });
+      _gizliKontrol(lv, klasor[arg]);
+      break;
+    }
+
+    case 'lock':
+    case 'encrypt': {
+      if (!lv.savunma) { yaz(komut + ": not needed right now", "hata"); break; }
+      if (!arg) { yaz(komut + ": specify a file to lock", "hata"); break; }
+      const tamYol = (cwd.length ? cwd.join('/') + '/' : '') + arg;
+      if (!(klasor[arg] && typeof klasor[arg] === 'string')) {
+        yaz(komut + ": " + arg + ": no such file", "hata"); break;
+      }
+      if (window._kilitlenenler && window._kilitlenenler.includes(tamYol)) {
+        yaz(arg + " is already locked.", "sonuk"); break;
+      }
+      // korunması gereken dosya mı?
+      if (lv.korunacak && lv.korunacak.includes(tamYol)) {
+        window._kilitlenenler = window._kilitlenenler || [];
+        window._kilitlenenler.push(tamYol);
+        klasor[arg] = "🔒 [ENCRYPTED — enemy cannot reach it]";
+        SES.kilit();
+        const kalan = lv.korunacak.length - window._kilitlenenler.length;
+        if (kalan > 0) {
+          yaz("🔒 " + arg + " locked. To protect: " + kalan + " more file(s).", "basari");
+        } else {
+          yaz("🔒 " + arg + " locked.", "basari");
+          yaz(">> ALL CRITICAL FILES PROTECTED. Enemy repelled. Type 'exit' to leave.", "basari");
+          window._gorevTamam = true;
+        }
+      } else {
+        yaz(komut + ": " + arg + " isn't critical, not worth locking. (you lost time)", "uyari");
+      }
+      break;
+    }
+
+    case 'rm': {
+      if (!lv.tuzakSilme && !lv.izDosyalari) { yaz("rm: command blocked on this system", "hata"); break; }
+      if (!arg) { yaz("rm: specify a file to delete", "hata"); break; }
+      const tamYol = (cwd.length ? cwd.join('/') + '/' : '') + arg;
+
+      // tuzak dosyası mı? -> alarm
+      if (lv.tuzakSilme && tamYol === lv.tuzakSilme) {
+        yaz("rm: system file deleted — INTEGRITY ALARM TRIGGERED", "hata");
+        bitir(false, "You deleted a system file. Alarm raised, you were traced.");
+        break;
+      }
+
+      // dosya gerçekten var mı ve bu klasörde mi?
+      if (!(klasor[arg] && typeof klasor[arg] === 'string')) {
+        yaz("rm: " + arg + ": no such file", "hata");
+        break;
+      }
+
+      // iz dosyası mı? -> sil ve görevi ilerlet
+      if (lv.izDosyalari && lv.izDosyalari.includes(tamYol)) {
+        delete klasor[arg];                       // sahte fs'den gerçekten sil
+        window._silinenIzler = (window._silinenIzler || 0) + 1;
+        const kalan = lv.izDosyalari.length - window._silinenIzler;
+        if (kalan > 0) {
+          yaz("rm: trace deleted. Traces left: " + kalan, "uyari");
+        } else {
+          yaz("rm: last trace deleted.", "basari");
+          yaz(">> ALL TRACES WIPED. Now type 'exit' to leave.", "basari");
+          window._gorevTamam = true;
+        }
+      } else {
+        // zararsız ama gereksiz dosya — silinebilir ama işe yaramaz
+        delete klasor[arg];
+        yaz("rm: " + arg + " deleted (irrelevant to task).", "sonuk");
+      }
+      break;
+    }
+
+    case 'exit':
+      if (window._gorevTamam) {
+        bitir(true);
+      } else {
+        yaz("exit: task not complete. " + (LEVELLER[levelIndex].exitUyari || "You can't leave yet."), "uyari");
+      }
+      break;
+
+    default:
+      yaz(komut + ": command not found", "hata");
+  }
+}
+
+/* ---- SAYAÇ ---- */
+function sayacBaslat() {
+  clearInterval(sayacRef);
+  sayacRef = setInterval(() => {
+    if (!oyunAktif) return;
+    kalanSure--;
+    sayacGuncelle();
+    if (kalanSure <= 10 && kalanSure > 0) SES.tik();   // son 10sn gerginlik
+    if (kalanSure <= 0) {
+      bitir(false, "Time's up. The system detected you.");
+    }
+  }, 1000);
+}
+function sayacGuncelle() {
+  const s = $('sayac');
+  s.textContent = "DETECTION: " + kalanSure + "s";
+  s.classList.toggle('tehlike', kalanSure <= 10);
+}
+
+/* ---- LEVEL YÜKLE ---- */
+function levelYukle(i) {
+  const lv = LEVELLER[i];
+  levelIndex = i;
+  cwd = [];
+  aktifFs = JSON.parse(JSON.stringify(lv.fs));   // orijinali bozmadan taze kopya
+  kalanSure = lv.sure;
+  window._gorevTamam = false;
+  window._silinenIzler = 0;
+  window._part1Tamam = false;
+  window._kilitlenenler = [];
+  if (lv.savunma) lv.savunma = false;   // final tekrar oynanırsa sızma fazından başlasın
+  document.querySelector('.ekran').classList.remove('alarm', 'sarsil');
+  $('kirmizi-flas').classList.remove('cak');
+  oyunAktif = true;
+  cikti.innerHTML = '';
+  $('hedef').textContent = "TARGET: " + lv.hedef;
+  $('kaplama').className = 'kaplama';
+
+  // istihbarat kutusu: sadece bu level'ın istihbaratı varsa göster, kapalı başlat
+  const istKutu = $('istihbarat');
+  if (lv.istihbarat) {
+    $('istihbarat-icerik').textContent = lv.istihbarat;
+    istKutu.className = 'istihbarat var';   // görünür ama kapalı
+  } else {
+    istKutu.className = 'istihbarat';        // gizli
+  }
+
+  giris.disabled = false;
+  lv.girisMetni.forEach(l => yaz(l.s, l.t));
+  yaz("", "sonuk");
+  promptGuncelle();
+  sayacGuncelle();
+  sayacBaslat();
+  giris.focus();
+}
+
+/* ---- BİTİŞ ---- */
+function bitir(kazandi, mesaj) {
+  oyunAktif = false;
+  clearInterval(sayacRef);
+  giris.disabled = true;
+  if (kazandi) SES.kazan(); else SES.kaybet();
+  const k = $('kaplama');
+  k.classList.add('goster', kazandi ? 'kazandi' : 'kaybetti');
+
+  const sonLevel = levelIndex >= LEVELLER.length - 1;
+  if (kazandi) {
+    $('kaplama-baslik').textContent = sonLevel ? "INFILTRATION COMPLETE" : "LAYER CLEARED";
+    $('kaplama-mesaj').textContent = sonLevel
+      ? "You breached every system. You left no trace."
+      : "Clean exit. The next system awaits.";
+    $('kaplama-buton').textContent = sonLevel ? "play again" : "next system →";
+    $('kaplama-buton').onclick = () => sonLevel ? levelYukle(0) : levelYukle(levelIndex + 1);
+  } else {
+    $('kaplama-baslik').textContent = "YOU WERE DETECTED";
+    $('kaplama-mesaj').textContent = mesaj || "Connection lost.";
+    $('kaplama-buton').textContent = "try again";
+    $('kaplama-buton').onclick = () => levelYukle(levelIndex);
+  }
+}
+
+/* ---- GİRİŞ DİNLE ---- */
+giris.addEventListener('keydown', (e) => {
+  // creamy tuş sesi: karakter, boşluk ve silme tuşlarında
+  if (oyunAktif && (e.key.length === 1 || e.key === 'Backspace' || e.key === ' ')) {
+    SES.tus();
+  }
+  if (e.key === 'Enter' && oyunAktif) {
+    const v = giris.value;
+    giris.value = '';
+    komutIsle(v);
+  }
+});
+document.querySelector('.ekran').addEventListener('click', () => { if (oyunAktif) giris.focus(); });
+
+/* istihbarat kutusu: başlığa basınca aç/kapa (tıklama terminale odak vermesin diye durdur) */
+$('istihbarat-baslik').addEventListener('click', (e) => {
+  e.stopPropagation();
+  $('istihbarat').classList.toggle('acik');
+});
+
+/* ---- GİRİŞ EKRANI ---- */
+function baslangicSeviyesi() {
+  const h = parseInt(location.hash.replace('#', ''), 10);
+  if (!isNaN(h) && h >= 0 && h < LEVELLER.length) return h;
+  return 0;
+}
+
+// klavye sesi kaydırıcısı
+$('ge-klavye-ses').addEventListener('input', (e) => {
+  _klavyeSes = e.target.value / 100;
+});
+// tüm sesler aç/kapa
+$('ge-ses-toggle').addEventListener('click', () => {
+  _sesAcik = !_sesAcik;
+  const b = $('ge-ses-toggle');
+  b.textContent = _sesAcik ? 'on ▸' : 'off';
+  b.classList.toggle('kapali', !_sesAcik);
+});
+// CONNECT: giriş ekranını kapat, ses motorunu uyandır, oyunu başlat
+$('ge-baslat').addEventListener('click', () => {
+  try { _ac(); } catch (e) {}          // ilk kullanıcı etkileşimi — ses izni açılır
+  $('giris-ekrani').classList.add('gizli');
+  levelYukle(baslangicSeviyesi());
+});
+
+/* hash değişince (ör. #3 yazıp Enter) o seviyeye atla — sayfa yenilemeye gerek yok */
+window.addEventListener('hashchange', () => {
+  if (!$('giris-ekrani').classList.contains('gizli')) return;  // henüz başlamadıysa dokunma
+  levelYukle(baslangicSeviyesi());
+});
+
+</script>
+</body>
+</html>
